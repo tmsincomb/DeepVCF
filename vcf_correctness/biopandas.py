@@ -2,6 +2,7 @@
 from abc import ABC
 from copy import deepcopy  # copies all nested dictionaries
 import gzip
+from io import StringIO
 from pathlib import Path
 from types import GeneratorType
 from typing import Union, Dict, List, Tuple
@@ -96,9 +97,11 @@ class BioDataFrame(SubclassedDataFrame, ABC):
                     _record[key] = value
             return _record
 
+        seqrecords = SeqIO.to_dict(seqrecords).values()  # Only care for the actual records themselves
         records = []
-        for seqrecord in SeqIO.to_dict(seqrecords).values():
+        for seqrecord in seqrecords:
             _records = []
+            # SeqIO Parse is a nested class
             record = seqrecord.__dict__
             # If a more complicated format is used; features will be nested.
             features = record.pop('features') if record.get('features') else []
@@ -159,7 +162,7 @@ def pathing(path: Union[str, Path], new: bool = False) -> Path:
     return path
 
 
-def read_seq(handle: str, format: str, alphabet: object = None) -> pandas.DataFrame:
+def read_seq(handle: Union[str, StringIO], format: str, alphabet: object = None) -> pandas.DataFrame:
     """ Read Bioinformatic file type
 
     :param str handle: str path of file to open.
@@ -171,30 +174,36 @@ def read_seq(handle: str, format: str, alphabet: object = None) -> pandas.DataFr
     >>> read_seq('file.vcf', format='vcf')
     >>> read_seq('file.bcf', format='bcf')
     """
+    format = format.lower().strip()
+    # Only BioPython can handle StringIO for now.
+    # if isinstance(handle, StringIO):
+    #     seqrecords = SeqIO.read(handle, format=format, alphabet=alphabet)
+    #     return BioDataFrame.from_seqrecords(seqrecords.__dict__)
+    path = pathing(handle)
+    # PySAM #
     if format == 'sam':
-        samfile = AlignmentFile(handle, 'r')
+        samfile = AlignmentFile(path, 'r')
         return BioDataFrame([alignment.to_dict() for alignment in list(samfile)])
     if format == 'bam':
-        samfile = AlignmentFile(handle, 'rb')
+        samfile = AlignmentFile(path, 'rb')
         return BioDataFrame([alignment.to_dict() for alignment in list(samfile)])
     if format == 'cram':
-        samfile = AlignmentFile(handle, "rc")
+        samfile = AlignmentFile(path, "rc")
         return BioDataFrame([alignment.to_dict() for alignment in list(samfile)])
     if format in ['vcf', 'bcf']:
-        vcffile = VariantFile(handle)
+        vcffile = VariantFile(path)
         header = vcffile.header.__str__().split('#')[-1].strip().split('\t')
         rows = [v.__str__().strip().split('\t') for v in vcf]
         return BioDataFrame(rows, columns=header)
-    # Checks path validity
-    path = pathing(handle)
-    # If file is gzip compressed
+    # BioPython #
+    # If file is gzip compressed for BioPython
     if path.suffix == '.gz':
-        with gzip.open(handle, "rt") as handle:
-            seqrecords = SeqIO.parse(handle, format=format, alphabet=alphabet)
+        with gzip.open(path, "rt") as handle:
+            seqrecords = SeqIO.parse(path, format=format, alphabet=alphabet)
             # need to use/return while I/O is open
             return BioDataFrame.from_seqrecords(seqrecords)
     # Uncompressed; will break if another compression is used.
-    seqrecords = SeqIO.parse(handle, format=format, alphabet=alphabet)
+    seqrecords = SeqIO.parse(path, format=format, alphabet=alphabet)
     return BioDataFrame.from_seqrecords(seqrecords)
 
 
