@@ -4,6 +4,9 @@ Scikit-Learn
 """
 import math
 import multiprocessing
+from pathlib import Path
+
+from scipy.sparse.sputils import isintlike 
 
 from Bio import SeqIO  # __init__ kicks in
 import numpy as np
@@ -62,18 +65,25 @@ class Pileup:
         self.ref_seq = get_ref_seq(reference_file)
         # to speed-up debugging
         if 'pileup' in kwargs:
-            self.pileup = kwargs['pileup']
-            # open it up if its a npz file
-            if isinstance(self.pileup, str):
-                self.pileup = load_npz(self.pileup)
-            for alignment in get_alignments(self.alignment_file):
-                self.contig_start = alignment.reference_start
-                break
+            try:
+                print('=== Using Input Pileup ===')
+                self.pileup = str(pathing(kwargs['pileup']))
+                # open it up if its a npz file
+                if isinstance(self.pileup, str):
+                    self.pileup = load_npz(self.pileup)
+                for alignment in get_alignments(self.alignment_file):
+                    self.contig_start = alignment.reference_start
+                    break
+            except:
+                print('=== Input Pileup Failed; Building Pileup From Scratch ===')
+                self.pileup = self.get_contig_pileup()
         else:
+            print('=== Building Pileup From Scratch ===')
             self.pileup = self.get_contig_pileup()
         if save_pileup_to_destination:
             self.save_pileup(save_pileup_to_destination)
-    
+        print('=== Pilup Complete ===')
+        
     def _offset_alignments(self, a, b, left, right, dtype=np.dtype('h')):
         """
         left: push top left or push bot left
@@ -87,7 +97,7 @@ class Pileup:
     
     def _get_contig_pileup_fragment(self, alignment):
         contig_fragment = []
-        for query_pos, ref_pos in alignment.get_aligned_pairs()[alignment.query_alignment_start:]: 
+        for query_pos, ref_pos in alignment.get_aligned_pairs()[alignment.query_alignment_start:alignment.query_alignment_end]: 
             if ref_pos != None:
                 last_ref_pos = ref_pos # removes odd alignment edge-cases
             if ref_pos != None and query_pos != None:
@@ -117,7 +127,7 @@ class Pileup:
             if 1.0 - 1.0 * skip_base / (total_aln_pos+1) < self.mimimum_alignment_coverage: 
                 continue
             # initial start
-            if i == 0:
+            if i == 0 or not self.contig_start:
                 self.contig_start = alignment.reference_start  
                 prev_reference_start = 0
                 contig_pf, prev_reference_end = self._get_contig_pileup_fragment(alignment)
@@ -153,7 +163,7 @@ class Pileup:
         return vstack(self._get_contig_pileup())
 
     def save_pileup(self, destination):
-        save_npz(pathing(destination, new=True), self.pileup)
+        save_npz(pathing(destination, new=True, overwrite=True), self.pileup)
 
 # TODO: add kwargs to each function
 # TODO: update kwargs pileup?
@@ -164,6 +174,7 @@ class Tensors:
         self.tensors = [self.supports_reference_with_deletions(), 
                         self.supports_alt_with_insertions(), 
                         self.supports_alt()]
+        print('=== Tensors Complete ===')
 
     def supports_reference_with_deletions(self, index_ref_with_del: tuple = (0, 4)):
         return self.pileup[:, slice(*index_ref_with_del)]
@@ -184,8 +195,8 @@ class VariantCaller:
                  ref_seq, 
                  alt_pileup, 
                  contig_start, 
-                 minimum_coverage: int = 10, 
-                 heterozygous_threshold: float = .15, 
+                 minimum_coverage: int = 20, 
+                 heterozygous_threshold: float = .25, 
                  minimum_variant_radius: int = 12, 
                  **kwargs) -> None:
         self.alt_pileup = alt_pileup
@@ -238,7 +249,7 @@ class VariantCaller:
         cpos = Y_pos[0]
         for pos in Y_pos[1:]:
             if abs(pos - cpos) < self.minimum_variant_radius:
-                variant_calls[pos]['fall_back_genotype'] = 7
+                del variant_calls[pos]#['fall_back_genotype'] = 7
             cpos = pos
         return variant_calls
 
@@ -251,21 +262,40 @@ class Preprocess(Pileup, Tensors, VariantCaller):
                  vcf_file: str,
                  bed_file: str = None,
                  window_size: int = 15,
-                 index_alt: tuple = (4, 8), 
+                 index_alt: tuple = (4, 8),
+                 variant_calls: str = None,
+                 save_variant_calls_to_destination: str = None,
                  **kwargs) -> None:
         self.vcf_file = pathing(vcf_file)
         self.bed_file = pathing(bed_file) if bed_file else None
         self.window_size = window_size
+        self.variant_calls = {}
         Pileup.__init__(self, reference_file, alignment_file, **kwargs)
         Tensors.__init__(self, self.pileup, **kwargs)
         VariantCaller.__init__(self, self.ref_seq, self.pileup[:, slice(*index_alt)], self.contig_start, **kwargs)
-        self.variant_calls = self.get_variant_calls()
+        # TODO: clean this up 
+        if variant_calls:
+            try:
+                print('=== Using Stored Variant Calls ===')
+                self.variant_calls = pd.read_csv(pathing(variant_calls), index_col=0).to_dict('index')
+            except:
+                print('=== Variant Calls Stored File Faile; Building Variant Calls From Scratch ===')
+                self.variant_calls = self.get_variant_calls()
+        else:
+            print('=== Building Variant Calls From Scratch ===')
+            self.variant_calls = self.get_variant_calls()
+        if save_variant_calls_to_destination:
+            # TODO: add check if parent path exists
+            variant_calls_destination = pathing(save_variant_calls_to_destination, new=True, overwrite=True)
+            pd.DataFrame.from_dict(self.variant_calls, orient='index').to_csv(variant_calls_destination, index=True)
+        print('=== Variant Calls Complete ===')
 
     def __repr__():
         return "Preprocessing!"
 
-    def get_training_array(self):
+    def get_training_array(self, window_size=None):
         """ VCF for training is considered absolute truth """
+        self.window_size = window_size or self.window_size
         y_index = {
             'A': 0, 
             'C': 1,
@@ -299,18 +329,22 @@ class Preprocess(Pileup, Tensors, VariantCaller):
                 genotype_index = 7
             # HETEROZYGOUS
             if genotype_index == 4:
-                y_vec[y_index[row.REF[0]]] += .5
-                y_vec[y_index[row.ALT[0]]] += .5
+                # y_vec[y_index[row.REF[0]]] = .5
+                # y_vec[y_index[row.ALT[0]]] = .5
+                y_vec[y_index[row.REF[0]]] = 1
+                y_vec[y_index[row.ALT[0]]] = 1
             # HOMOZYGOUS
             elif genotype_index == 5:
-                y_vec[y_index[row.ALT[0]]] += 1
+                y_vec[y_index[row.ALT[0]]] = 1
+                # y_vec[y_index[row.ALT[0]]] = 1
             # NON-VARIANT
             elif genotype_index == 6:
-                y_vec[y_index[row.REF[0]]] += 1
+                y_vec[y_index[row.REF[0]]] = 1
+                # y_vec[y_index[row.REF[0]]] = 1
             # COMPLEX
             elif genotype_index == 7:
                 # todo: this shouldnt be always in favor of alt
-                y_vec[y_index[row.ALT[0]]] += 1 # todo: maybe take avgs if this messes with the output
+                y_vec[y_index[row.ALT[0]]] = 1 # todo: maybe take avgs if this messes with the output
             y_vec[genotype_index] = 1
             Y[row.POS] = y_vec        
         X_initial = []
@@ -321,16 +355,17 @@ class Preprocess(Pileup, Tensors, VariantCaller):
                 if not any(focus_regions.contains(position)): 
                     continue
             tp = position - self.contig_start - 1
-            if tp < 0:
+            if tp < 0:  # calls before contig
                 continue
             tensor_stack = np.stack([tensor[tp-left_offset:tp+right_offset].toarray() for tensor in self.tensors], axis=2)
-            if tensor_stack.size == 0:
-                print(position, 'tp end')
+            if tensor_stack.size == 0:  # calls after contig
                 break
             position_array.append(position)
             X_initial.append(tensor_stack)
             Y_initial.append(Y[position])
+        print('change3!')
         false_positives = sorted(set(self.variant_calls)- set(Y))
+        print('false-p', len(false_positives))
         for position in false_positives:
             if self.bed_file: 
                 if not any(focus_regions.contains(position)): 
@@ -343,11 +378,18 @@ class Preprocess(Pileup, Tensors, VariantCaller):
                 if tensor_stack.size == 0:
                     print(position, 'shit -> fp end; should not happen')
                     break
-                y[base_position] += 1v
+                y[base_position] = 1
                 position_array.append(position)
                 Y_initial.append(y)  # like this incase we want to modify the base 
                 X_initial.append(tensor_stack)
-        Xarray = np.stack(X_initial)
-        Yarray = np.stack(Y_initial)
+        Xarray = np.stack(X_initial).astype('float64')
+        Yarray = np.stack(Y_initial).astype('float64')
         return Xarray, Yarray, position_array # Xarray, Yarray
             
+
+    def get_window(self, position, window_size=15):
+        position = position - self.contig_start - 1
+        if not window_size % 2: print('shit man, the window needs to be odd; needs to have a middle position')
+        left_offset = math.floor(window_size / 2)
+        right_offset = math.ceil(window_size / 2)
+        return np.stack([tensor[position-left_offset:position+right_offset].toarray() for tensor in self.tensors], axis=2)
