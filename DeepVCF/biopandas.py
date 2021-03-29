@@ -137,6 +137,24 @@ class BioDataFrame(SubclassedDataFrame, ABC):
         pass
 
 
+def read_bed(bedfile: str) -> pandas.DataFrame:
+    """ Reads bed files without the pesky tbi index needed. 
+        BED DOCS :: https://genome.ucsc.edu/FAQ/FAQformat.html
+    """
+    with open(bedfile, 'r') as f:
+        header = ['chrom', 'chromStart', 'chromEnd', 'name', 'score', 'strand', 'thickStart', 'thickEnd', 'itemRgb', 'blockCount', 'blockSizes', 'blockStarts']
+        data_start = 0
+        for i, line in enumerate(f.read().split()):
+            row = line.split('\t')
+            if row[0] in ['browser', 'track']:
+                data_start = i+1
+                break
+            if row[0] not in ['browser', 'track'] and i > 0:
+                break
+        return pandas.read_csv(bedfile, delimiter='\t', header=None, names=header, skiprows=data_start).fillna('')
+
+
+
 def read_vcf(path: str, ignore_header: bool = False, samples_as_dict_dtype: bool = True,) -> pandas.DataFrame:
     """ VCF reader for Version 4.2 using https://samtools.github.io/hts-specs/VCFv4.2.pdf 
 
@@ -280,3 +298,4 @@ def read_seq(handle: Union[str, StringIO], format: str, threads=multiprocessing.
 pandas.DataFrame = BioDataFrame
 pandas.read_seq = read_seq
 pandas.read_vcf = read_vcf
+pandas.read_bed = read_bed
