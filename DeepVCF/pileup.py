@@ -1,3 +1,4 @@
+from collections import defaultdict
 import multiprocessing
 import re 
 import sys 
@@ -30,15 +31,23 @@ def get_alignments(alignment_file, threads=multiprocessing.cpu_count()):
 
 class Pileup:
     """ """
-    baseindex={
-        'A':0, 'a':0,
-        'C':1, 'c':1,
-        'G':2, 'g':2,
-        'T':3, 't':3,
-        '*': None,
-        'N': None, 'n': None,
-        '': None,
-    }
+    iupac_index = {
+        'A': {0: 1},
+        'C': {1: 1},
+        'G': {2: 1},
+        'T': {3: 1}, 'U': {3: 1},
+        '*': {}, '': {}, '.': {}, '-': {},  # gap or end
+        'M': {0: 0.5, 1: 0.5},
+        'R': {0: 0.5, 2: 0.5},
+        'W': {0: 0.5, 3: 0.5},
+        'S': {2: 0.5, 1: 0.5},
+        'Y': {1: 0.5, 3: 0.5},
+        'K': {2: 0.5, 3: 0.5},
+        'V': {0: 0.33, 1: 0.33, 2: 0.33},
+        'H': {0: 0.33, 1: 0.33, 3: 0.33},
+        'D': {0: 0.33, 2: 0.33, 3: 0.33},
+        'B': {1: 0.33, 2: 0.33, 3: 0.33},
+        'N': {0: 0.25, 1: 0.25, 2: 0.25, 3: 0.25}}
     def __repr__():
         return 'Pileup 2D matrix - REF/deletion + ALT + ALT/insertion'
 
@@ -57,6 +66,7 @@ class Pileup:
         # helper variables
         self.contig_start= None 
         self.contig_end = None
+        self.variant_calls = {}
         # variant parameters
         self.minimum_variant_coverage = minimum_variant_coverage
         self.heterozygous_threshold = heterozygous_threshold  # minimum difference a secondary alt needs to be for a variant to be called. 
@@ -118,38 +128,37 @@ class Pileup:
             if i == 0:
                 self.contig_start = pileupcolumn.reference_pos
             self.contig_end = pileupcolumn.reference_pos
-            ref_base = self.ref_seq[pileupcolumn.reference_pos]
+            ref_base = self.ref_seq[pileupcolumn.reference_pos].upper()
             total_count = pileupcolumn.get_num_aligned()
-            pos = self.baseindex[ref_base]
-            if pos != None:
-                pile[pos] = total_count
+            pos_values = self.iupac_index[ref_base.upper()]
+            if pos_values:
+                for pos, value in pos_values.items():
+                    pile[pos] += round(total_count/value, 2)
             col = pileupcolumn.get_query_sequences(mark_matches=False, mark_ends=False, add_indels=True)
             for nt in col:
                 if len(nt) > 1:
                     _nt, indelnts = re.split('\-|\+', nt)
                     if nt[1] == '+':
                         for indelnt in indelnts[1:]:
-                            try: pos = self.baseindex[indelnt]
+                            try: pos_values = self.iupac_index[indelnt.upper()]
                             except: continue  # ignore indels larger than 9
-                            if pos == None: continue
-                            pile[pos+8] += 1
+                            if not pos_values: continue
+                            for pos, value in pos_values.items():
+                                pile[pos+8] += value
                 else:
                     _nt = nt
-                pos = self.baseindex[_nt]
-                if pos == None: continue
-                pile[pos+4] += 1
+                pos_values = self.iupac_index[_nt.upper()]
+                for pos, value in pos_values.items():
+                    pile[pos+4] += value
             call = self._meets_filter(total_count, pile[4:8], ref_base)
             if call:
-                # sys.exit('YAY')
                 self.variant_calls[pileupcolumn.reference_pos] = True # TODO: potential to hold info {'ref_base': ref_base, 'alt_base':}
             yield [call] + pile
-            # if i == 200100: break
+            if i == 200100: break
         samfile.close()
-
 
     def get_pileup(self):
         return np.vstack(list(self._get_pileup()))
-    
 
     def save_pileup(self, destination):
         """
@@ -160,6 +169,7 @@ class Pileup:
         """
         np.save(pathing(destination, new=True, overwrite=True), self.pileup)
         # save_npz(pathing(destination, new=True, overwrite=True), self.pileup)
+
 
 if __name__ == '__main__':
     # pileup = Pileup(

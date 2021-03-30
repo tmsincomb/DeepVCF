@@ -280,7 +280,6 @@ class Preprocess(Pileup, Tensors):
                  vcf_file: str = None,
                  bed_file: str = None,
                  window_size: int = 15,
-                 variant_calls: dict = None,
                 #  index_alt: tuple = (4, 8),
                 #  variant_calls: str = None,
                 #  save_variant_calls_to_destination: str = None,
@@ -289,7 +288,7 @@ class Preprocess(Pileup, Tensors):
         self.bed_file = pathing(bed_file) if bed_file else None
         self.window_size = window_size
         Pileup.__init__(self, reference_file, alignment_file, **kwargs)
-        self.variant_calls = variant_calls or {v+self.contig_start + 1:True for v in np.nonzero(self.pileup[:, :1])[0]}  # TODO: where to move this?
+        #self.variant_calls = variant_calls or {v+self.contig_start + 1:True for v in np.nonzero(self.pileup[:, :1])[0]}  # TODO: where to move this?
         Tensors.__init__(self, self.pileup, **kwargs)
         # This Variant Caller bad/insensitive on purpose. We need a wide net to catch the real variants while also allowing us to skip windows where variants are less likely.
         # VariantCaller.__init__(self, self.ref_seq, self.pileup[:, slice(*index_alt)], self.contig_start, **kwargs)
@@ -345,11 +344,11 @@ class Preprocess(Pileup, Tensors):
                 exit(f'ERROR :: VCF file has too many samples')
             vpos = -float('inf')
             for row in vcf.itertuples():
-                y_vec = y[:] # ['A', 'C', 'T', 'G', het, hom, non, complex]
-                if self.bed_file: 
-                    if not any(focus_regions.contains(row.POS-1)):  # bed file 0-index
-                        count += 1
-                        continue
+                y_vec = y[:]  # ['A', 'C', 'T', 'G', het, hom, non, complex]
+                # if self.bed_file: 
+                #     if not any(focus_regions.contains(row.POS-1)):  # bed file 0-index
+                #         count += 1
+                #         continue
                 # get genotype call. default to non-variant
                 genotype = row[-1]['GT'].replace('|', '/')
                 genotype_index = y_index.get(genotype, 7)
@@ -391,9 +390,9 @@ class Preprocess(Pileup, Tensors):
                 y_vec[genotype_index] = 1
                 Y[row.POS] = y_vec   
             for position in Y:
-                if self.bed_file: 
-                    if not any(focus_regions.contains(position-1)):  # bed file 0-index
-                        continue
+                # if self.bed_file: 
+                #     if not any(focus_regions.contains(position-1)):  # bed file 0-index
+                #         continue
                 tp = position - self.contig_start - 1
                 if tp < 0:  # calls before contig :: incase a bed file was used 
                     continue
