@@ -1,7 +1,8 @@
 # Variant Caller
-
-# make this an rst; looks cool with the gif
+Deep Learning Variant Caller aimed for Prokaryotic genomes
 
 # installation 
+```bash
 git clone git@github.com:tmsincomb/DeepVCF.git
 pip install -e ./DeepVCF
+```
