@@ -12,16 +12,20 @@ from tensorflow.keras.callbacks import EarlyStopping
 import numpy as np 
 import pickle 
 from DeepVCF import Preprocess
+from typing import Union, List, Dict, Tuple
+
 
 physical_devices = tf.config.list_physical_devices("GPU")
 try:
     tf.config.experimental.set_memory_growth(physical_devices[0], True)
 except:
-    print('no GPU')
+    print('=== No GPU Detected ===')
+tf.config.run_functions_eagerly(False)
 
 
 def loss_func(y_true, y_pred):
     return tf.reduce_sum(tf.pow(y_true - y_pred, 2 )) 
+
 
 def ignore_accuracy_of_class(class_to_ignore=0):
     def ignore_acc(y_true, y_pred):
@@ -35,62 +39,89 @@ def ignore_accuracy_of_class(class_to_ignore=0):
 
     return ignore_acc
 
-### MODEL ###
-def build_model(x_train, y_train):
-    inputs = Input(shape=x_train.shape[1:])
 
-    x = Conv2D(filters=32, kernel_size=(4,4), input_shape=x_train.shape[1:], activation='elu', padding="same", strides=1)(inputs)
-    x = MaxPool2D(pool_size=(2, 2), strides=1)(x)
-    x = Conv2D(filters=64, kernel_size=(3,3), activation='elu', padding="same", strides=1)(x)
-    x = MaxPool2D(pool_size=(2, 2), strides=1)(x)
-    x = Conv2D(filters=128, kernel_size=(2,2), activation='elu', padding="same", strides=1)(x)
-    x = MaxPool2D(pool_size=(2, 2), strides=1)(x)
+class Models:
 
-    x = Flatten()(x)
+    def __init__(self):
+        pass
 
-    # h = Dense(x_train.shape[1]*16, activation='elu')(x)
-    # dropout = Dropout(0.1)(h)
-    # h = Dense(x_train.shape[1]*8, activation='elu')(x)
-    # dropout = Dropout(0.1)(h)
-    # h = Dense(x_train.shape[1]*4, activation='elu')(dropout)
-    # dropout = Dropout(0.1)(h)
-    # h = Dense(x_train.shape[1]*2, activation='elu')(dropout)
-    # dropout = Dropout(0.1)(h)
+    def default_model(self, input_shape: Tuple[int, int, int], **kwargs) -> keras.Model:
+        inputs = Input(shape=input_shape)
 
-    h = Dense(13*64, activation='elu')(x)
-    dropout = Dropout(0.2)(h)
-    h = Dense(13*32, activation='elu')(x)
-    dropout = Dropout(0.2)(h)
-    h = Dense(13*16, activation='elu')(dropout)
-    dropout = Dropout(0.2)(h)
-    h = Dense(13*8, activation='elu')(dropout)
-    dropout = Dropout(0.2)(h)
-    # h = Dense(13*2, activation='elu')(dropout)
-    # dropout = Dropout(0.2)(h)
+        x = Conv2D(filters=16, kernel_size=(1,4), input_shape=input_shape, activation='elu', padding="same", strides=1)(inputs)
+        x = MaxPool2D(pool_size=(5, 1), strides=1)(x)
+        x = Conv2D(filters=32, kernel_size=(2,4), activation='elu', padding="same", strides=1)(x)
+        x = MaxPool2D(pool_size=(4, 1), strides=1)(x)
+        x = Conv2D(filters=48, kernel_size=(3,4), activation='elu', padding="same", strides=1)(x)
+        x = MaxPool2D(pool_size=(3, 1), strides=1)(x)
 
-    Y1 = Dense(4, activation='sigmoid', name='Y1')(dropout)
-    Y2 = Dense(4, activation='elu', name='Y2')(dropout)
-    Y4 = Softmax(name='Y4')(Y2)
+        x = Flatten()(x)
 
-    model = Model(inputs=inputs, outputs=[Y1, Y4])
+        h = Dense(336, activation='elu')(x)
+        dropout = Dropout(0.4)(h)
+        h = Dense(168, activation='elu')(x)
+        dropout = Dropout(0.2)(h)
+        h = Dense(84, activation='elu')(dropout)
+        dropout = Dropout(0.1)(h)
+        h = Dense(42, activation='elu')(dropout)
+        dropout = Dropout(0.0)(h)
 
-    optim = keras.optimizers.Adam(lr=0.0005)
-    metrics = ["accuracy"]
-    losses = {
-        "Y1": 'binary_crossentropy',
-        'Y4': 'categorical_crossentropy'
-    }
-    model.compile(loss=losses, optimizer=optim, metrics=metrics, loss_weights=[1, {0:1, 1:1, 2:0, 3:1}])   
-    model.summary()
+        base_out = Dense(4, activation='sigmoid', name='base')(dropout)
+        h = Dense(4, activation='elu')(dropout)
+        genotype_out = Softmax(name='genotype')(h)
 
-    y = {
-        'Y1':y_train[:,:4],
-        'Y4':y_train[:,4:]
-    }
-    early_stop = EarlyStopping(patience=5, restore_best_weights=True)
-    model.fit(x_train, y, validation_split=.3, epochs=100, callbacks=[early_stop])
-    
-    return model
+        model = Model(inputs=inputs, outputs=[base_out, genotype_out])
+        
+        return model 
+        
+
+    def train_model(self,
+                    model: keras.Model,
+                    x_train: np.array, 
+                    y_train: np.array, 
+                    base_loss_func: Union[str, object] = 'binary_crossentropy', 
+                    genotype_loss_func: Union[str, object] = 'categorical_crossentropy',
+                    optimizer: Union[str, object] = keras.optimizers.Adam(lr=0.0005),
+                    loss_weights: list = [1, {0:.5, 1:.5, 2:0, 3:.5}],
+                    validation_split: float = .25,
+                    epochs: int = 30,
+                    patience: int = 5,
+                    **kwargs) -> keras.Model:
+        """
+        Train Keras Model
+
+        Args:
+            x_train (np.array): [description]
+            y_train (np.array): [description]
+            base_loss_func (Union[str, object], optional): [description]. Defaults to 'binary_crossentropy'.
+            genotype_loss_func (Union[str, object], optional): [description]. Defaults to 'categorical_crossentropy'.
+            optimizer (Union[str, object], optional): [description]. Defaults to keras.optimizers.Adam(lr=0.0005).
+            loss_weights (list, optional): [description]. Defaults to [1, {0:.5, 1:.5, 2:0, 3:.5}].
+            validation_split (float, optional): [description]. Defaults to .25.
+            epochs (int, optional): [description]. Defaults to 20.
+            patience (int, optional): [description]. Defaults to 1.
+
+        Returns:
+            keras.Model: [description]
+        """
+        optim = optimizer
+        metrics = ["accuracy"]
+        losses = {
+            'base': base_loss_func,
+            'genotype': genotype_loss_func,
+        }
+        model.compile(loss=losses, optimizer=optim, metrics=metrics, loss_weights=loss_weights)   
+        y = {
+            'base':y_train[:,:4],
+            'genotype':y_train[:,4:]
+        }
+        early_stop = EarlyStopping(patience=patience, restore_best_weights=True)
+        model.fit(x_train, y, validation_split=validation_split, epochs=epochs, callbacks=[early_stop])
+        
+        return model
+
+
+models = Models()
 
 
 if __name__ == '__main__':
@@ -104,8 +135,9 @@ if __name__ == '__main__':
     # sys.path.append('/home/tmsincomb/Dropbox/thesis/VariantNET/')
     # import variantNet.utils as utils
     # x_train, y_train, pos_array = \
-    # utils.get_training_array("/home/tmsincomb/Dropbox/thesis/VariantNET/wd/aln_tensor_chr21", 
-    #                          "/home/tmsincomb/Dropbox/thesis/VariantNET/wd/variants_chr21", 
-    #                          "/home/tmsincomb/Dropbox/thesis/VariantNET/testing_data/chr21/CHROM21_v.3.3.2_highconf_noinconsistent.bed" )
+    # utils.get_training_array("/home/tmsincomb/Dropbox/thesis/VariantNET/wd/aln_tensor_chr22", 
+    #                          "/home/tmsincomb/Dropbox/thesis/VariantNET/wd/variants_chr22", 
+    #                          "/home/tmsincomb/Dropbox/thesis/VariantNET/testing_data/chr22/CHROM22_v.3.3.2_highconf_noinconsistent.bed" )
     
-    model = build_model(x_train, y_train)
+    model = models.default_model(input_shape=x_train.shape[0])
+    model = models.train_model(model, x_train, y_train)

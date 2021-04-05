@@ -288,7 +288,9 @@ class Preprocess(Pileup, Tensors):
         self.bed_file = pathing(bed_file) if bed_file else None
         self.window_size = window_size
         Pileup.__init__(self, reference_file, alignment_file, **kwargs)
-        #self.variant_calls = variant_calls or {v+self.contig_start + 1:True for v in np.nonzero(self.pileup[:, :1])[0]}  # TODO: where to move this?
+        import json
+        # self.variant_calls = {int(k):True for k, v in json.load(open('/home/tmsincomb/Desktop/mock.json')).items()}
+        self.variant_calls = {v+self.contig_start + 1:True for v in np.nonzero(self.pileup[:, :1])[0]}  # TODO: where to move this?
         Tensors.__init__(self, self.pileup, **kwargs)
         # This Variant Caller bad/insensitive on purpose. We need a wide net to catch the real variants while also allowing us to skip windows where variants are less likely.
         # VariantCaller.__init__(self, self.ref_seq, self.pileup[:, slice(*index_alt)], self.contig_start, **kwargs)
@@ -338,20 +340,25 @@ class Preprocess(Pileup, Tensors):
             focus_regions = pd.arrays.IntervalArray.from_tuples(focus_regions, closed='both')
         count = 0
         too_complex = set()
+        self.variants_called = set()
         if self.vcf_file:
             vcf = pd.read_vcf(self.vcf_file)  # Should only have one sample
             if len(vcf.columns) > 10:
                 exit(f'ERROR :: VCF file has too many samples')
             vpos = -float('inf')
             for row in vcf.itertuples():
+                # if not self.variant_calls.get(row.POS):
+                #     continue
+                if self.bed_file: 
+                    if not any(focus_regions.contains(row.POS-1)):  # bed file 0-index
+                        count += 1
+                        continue
                 y_vec = y[:]  # ['A', 'C', 'T', 'G', het, hom, non, complex]
-                # if self.bed_file: 
-                #     if not any(focus_regions.contains(row.POS-1)):  # bed file 0-index
-                #         count += 1
-                #         continue
                 # get genotype call. default to non-variant
                 genotype = row[-1]['GT'].replace('|', '/')
-                genotype_index = y_index.get(genotype, 7)
+                genotype_index = y_index.get(genotype)
+                if not genotype_index:
+                    continue
                 # HETEROZYGOUS
                 if genotype_index == 4:
                     y_vec[y_index[row.REF[0]]] = .5
@@ -373,15 +380,16 @@ class Preprocess(Pileup, Tensors):
                 # makes sure we get the proper het base call before changing the gt to complex.
                 if len(row.REF) > 1 or len(row.ALT) > 1:
                     genotype_index = 7
-                if abs(row.POS - vpos) < self.minimum_variant_radius:
-                    genotype_index = 7
-                    try:
-                        Y[vpos][4] = 0
-                        Y[vpos][5] = 0
-                        Y[vpos][6] = 0
-                        Y[vpos][7] = 1
-                    except:
-                        pass
+                    # continue
+                # if abs(row.POS - vpos) < self.minimum_variant_radius:
+                #     genotype_index = 7
+                #     try:
+                #         Y[vpos][4] = 0
+                #         Y[vpos][5] = 0
+                #         Y[vpos][6] = 0
+                #         Y[vpos][7] = 1
+                #     except:
+                #         pass
                 # if len(row.REF) > 5 or len(row.ALT) > 5:
                 #     too_complex.add(row.POS)
                 #     vpos = row.POS
@@ -389,10 +397,13 @@ class Preprocess(Pileup, Tensors):
                 vpos = row.POS
                 y_vec[genotype_index] = 1
                 Y[row.POS] = y_vec   
-            for position in Y:
-                # if self.bed_file: 
-                #     if not any(focus_regions.contains(position-1)):  # bed file 0-index
-                #         continue
+                self.variants_called.add(row.POS)
+            count = 0
+            for position in sorted(Y):
+                if self.bed_file: 
+                    if not any(focus_regions.contains(position)):  # bed file 0-index
+                        count += 1
+                        continue
                 tp = position - self.contig_start - 1
                 if tp < 0:  # calls before contig :: incase a bed file was used 
                     continue
@@ -402,39 +413,51 @@ class Preprocess(Pileup, Tensors):
                 position_array.append(position)
                 X_initial.append(tensor_stack)
                 Y_initial.append(Y[position])
-        # print('focus count', count)
+        # print('vc skipped', count)
         # false_positives = sorted(set(self.variant_calls) - (set(Y) | too_complex))
         # self.false_positives = false_positives
         # ref_seq_seg = self.ref_seq[self.contig_start-1:self.contig_end]
         # print('false-p', len(false_positives))
         # for position in false_positives[:]:
         else:
-            for position in self.variant_calls:
+            outside, size_catch, fp, amb_base,total=0,0,0,0,0
+            for position in sorted(set(self.variant_calls) - self.variants_called):
+                total+=1
                 p = position - self.contig_start - 1  # numpy array 0-index
                 if self.bed_file: 
-                    if not any(focus_regions.contains(position-1)):  # bed file 0-index 
+                    if not any(focus_regions.contains(position)):  # bed file 0-index 
+                        outside+=1
                         continue
                 y = [0, 0, 0, 0, 0, 0, 1, 0]
+                # TODO
                 # base_position = y_index.get(self.variant_calls[position]['ref_base'])
-                base_position = y_index.get(self.ref_seq[position-1])  # bypthon 0-index
+                base_position = y_index.get(str(self.ref_seq[position-1]))  # bypthon 0-index
                 # p = position + self.contig_start
-                if base_position:
+                if base_position != None:
                     if p - left_offset < 0:  # TODO: circularize if for plasmids
+                        print('wall hit!')
                         continue
                     tensor_stack = np.stack([tensor[p-left_offset:p+right_offset] for tensor in self.tensors], axis=2)
                     vec = np.transpose(tensor_stack, axes=(0,2,1))
-                    if sum(vec[7,:,0]) < 5:
-                        continue
-                        # print(position)
+                    # if sum(vec[7,:,0]) < 5:
+                    #     size_catch+=1
+                    #     continue
                     if tensor_stack.size == 0:
-                        print(position, 'shit -> fp end; should not happen')
+                        print(position, 'WARNING ::: contig past end; this should not happen!')
                         break
                     y[base_position] = 1
+                    fp+=1
                     position_array.append(position)
                     Y_initial.append(y)  # like this incase we want to modify the base 
                     X_initial.append(tensor_stack)
-
-        print(position)
+                else:
+                    amb_base += 1
+                    print(position, base_position, str(self.ref_seq[position-1]))
+            print('ambygous base catches:', amb_base)
+            print('bed catches:', outside)
+            print('size catches', size_catch)
+            print('fp total', fp)
+            print('total', total)
         Xarray = np.stack(X_initial).astype('float64')
         Yarray = np.stack(Y_initial).astype('float64')
         return Xarray, Yarray, position_array # Xarray, Yarray
@@ -442,7 +465,7 @@ class Preprocess(Pileup, Tensors):
 
     def get_window(self, position, window_size=15):
         position = position - self.contig_start - 1
-        if not window_size % 2: print('shit man, the window needs to be odd; needs to have a middle position')
+        if not window_size % 2: print('The window size needs to be odd for it to work correctly!')
         left_offset = math.floor(window_size / 2)
         right_offset = math.ceil(window_size / 2)
         return np.stack([tensor[position-left_offset:position+right_offset] for tensor in self.tensors], axis=2)

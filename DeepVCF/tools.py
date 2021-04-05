@@ -66,13 +66,16 @@ def bcftools_vcf(ref_file: str, bam_file: str, output_folder: str, output_prefix
     ref_file = pathing(ref_file)
     bam_file = pathing(bam_file)
     output_folder = pathing(output_folder)
-    output = output_folder / output_prefix + '.bcftools.vcf'
+    output = output_folder / (output_prefix + '.bcftools.vcf')
     cmd = (
-        f"bcftools mpileup -d 100 -q 60 -Ou --threads 6 -f {ref_file} {bam_file} "
+        f"bcftools mpileup -a AD -Ou --threads 6 -f {ref_file} {bam_file} "
         f"| bcftools call -Ou -mv "
-        f"| bcftools filter -s LowQual -e '%QUAL<20 || DP>100' > {output}"
+        f"| bcftools filter -s LowQual -e '%QUAL<20' > {output}"
     )
-    _ = check_output(cmd, shell=True)
+    try:
+        _ = check_output(cmd, shell=True)
+    except Exception as e:
+        print(e)
     return output
 
 
