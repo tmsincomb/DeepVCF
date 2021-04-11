@@ -3,6 +3,7 @@ Home for string tools and any other misc tool until its large enough for it's ow
 """
 from subprocess import check_output, CalledProcessError
 from typing import Union, Tuple
+from multiprocessing import cpu_count
 from pathlib import Path
 import os
 import sys
@@ -68,7 +69,7 @@ def bcftools_vcf(ref_file: str, bam_file: str, output_folder: str, output_prefix
     output_folder = pathing(output_folder)
     output = output_folder / (output_prefix + '.bcftools.vcf')
     cmd = (
-        f"bcftools mpileup -a AD -Ou --threads 6 -f {ref_file} {bam_file} "
+        f"bcftools mpileup -a AD -Ou --threads {cpu_count()} -f {ref_file} {bam_file} "
         f"| bcftools call -Ou -mv "
         f"| bcftools filter -s LowQual -e '%QUAL<20' > {output}"
     )

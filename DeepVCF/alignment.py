@@ -96,7 +96,7 @@ class Alignment:
                 output_folder,
                 output_prefix,
                 verbose: bool = True, 
-                return_pysam = True,
+                return_pysam = False,
                 **options) -> pysam.AlignmentFile:
         """bwa mem aligner with samtools sort/cleanup
 
@@ -152,5 +152,6 @@ class Alignment:
         if return_pysam:
             pysam_object = AlignmentFile(f'{output.with_suffix(".mapped.bam")}', 'r', check_header=False)
             return pysam_object
+        return f'{output.with_suffix(".mapped.bam")}'
 
 alignment = Alignment()

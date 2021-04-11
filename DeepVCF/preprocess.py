@@ -359,28 +359,31 @@ class Preprocess(Pileup, Tensors):
                 genotype_index = y_index.get(genotype)
                 if not genotype_index:
                     continue
-                # HETEROZYGOUS
-                if genotype_index == 4:
-                    y_vec[y_index[row.REF[0]]] = .5
-                    y_vec[y_index[row.ALT[0]]] = .5
-                    # y_vec[y_index[row.REF[0]]] = 1
-                    # y_vec[y_index[row.ALT[0]]] = 1
-                # HOMOZYGOUS
-                elif genotype_index == 5:
-                    y_vec[y_index[row.ALT[0]]] = 1
-                    # y_vec[y_index[row.ALT[0]]] = 1
-                # NON-VARIANT
-                elif genotype_index == 6:
-                    y_vec[y_index[row.REF[0]]] = 1
-                    # y_vec[y_index[row.REF[0]]] = 1
-                # COMPLEX
-                elif genotype_index == 7:
-                    # todo: this shouldnt be always in favor of alt
-                    y_vec[y_index[row.ALT[0]]] = 1 # todo: maybe take avgs if this messes with the output
-                # makes sure we get the proper het base call before changing the gt to complex.
-                if len(row.REF) > 1 or len(row.ALT) > 1:
-                    genotype_index = 7
-                    # continue
+                try:
+                    # HETEROZYGOUS
+                    if genotype_index == 4:
+                        y_vec[y_index[row.REF[0]]] = .5
+                        y_vec[y_index[row.ALT[0]]] = .5
+                        # y_vec[y_index[row.REF[0]]] = 1
+                        # y_vec[y_index[row.ALT[0]]] = 1
+                    # HOMOZYGOUS
+                    elif genotype_index == 5:
+                        y_vec[y_index[row.ALT[0]]] = 1
+                        # y_vec[y_index[row.ALT[0]]] = 1
+                    # NON-VARIANT
+                    elif genotype_index == 6:
+                        y_vec[y_index[row.REF[0]]] = 1
+                        # y_vec[y_index[row.REF[0]]] = 1
+                    # COMPLEX
+                    elif genotype_index == 7:
+                        # todo: this shouldnt be always in favor of alt
+                        y_vec[y_index[row.ALT[0]]] = 1 # todo: maybe take avgs if this messes with the output
+                    # makes sure we get the proper het base call before changing the gt to complex.
+                    if len(row.REF) > 1 or len(row.ALT) > 1:
+                        genotype_index = 7
+                except:
+                    #  TODO: iupac not supported yet, too much of a slow down.
+                    continue
                 # if abs(row.POS - vpos) < self.minimum_variant_radius:
                 #     genotype_index = 7
                 #     try:
@@ -452,12 +455,12 @@ class Preprocess(Pileup, Tensors):
                     X_initial.append(tensor_stack)
                 else:
                     amb_base += 1
-                    print(position, base_position, str(self.ref_seq[position-1]))
-            print('ambygous base catches:', amb_base)
-            print('bed catches:', outside)
-            print('size catches', size_catch)
-            print('fp total', fp)
-            print('total', total)
+                    # print(position, base_position, str(self.ref_seq[position-1]))
+            # print('ambygous base catches:', amb_base)
+            # print('bed catches:', outside)
+            # print('size catches', size_catch)
+            # print('fp total', fp)
+            # print('total', total)
         Xarray = np.stack(X_initial).astype('float64')
         Yarray = np.stack(Y_initial).astype('float64')
         return Xarray, Yarray, position_array # Xarray, Yarray

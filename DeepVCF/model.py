@@ -8,11 +8,14 @@ import tensorflow.keras as keras
 from tensorflow.keras import Input, Model
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import Dense, Conv2D, MaxPool1D, MaxPool2D, Dropout, Flatten, Softmax
-from tensorflow.keras.callbacks import EarlyStopping
+from tensorflow.keras.callbacks import EarlyStopping, TensorBoard
 import numpy as np 
 import pickle 
 from DeepVCF import Preprocess
 from typing import Union, List, Dict, Tuple
+
+
+NAME="DeepVCF-Default-CNN"
 
 
 physical_devices = tf.config.list_physical_devices("GPU")
@@ -86,6 +89,7 @@ class Models:
                     validation_split: float = .25,
                     epochs: int = 30,
                     patience: int = 5,
+                    verbose=1,
                     **kwargs) -> keras.Model:
         """
         Train Keras Model
@@ -115,8 +119,10 @@ class Models:
             'base':y_train[:,:4],
             'genotype':y_train[:,4:]
         }
+        tensorboard = TensorBoard(log_dir=f"logs/{NAME}")
+        print(tensorboard)
         early_stop = EarlyStopping(patience=patience, restore_best_weights=True)
-        model.fit(x_train, y, validation_split=validation_split, epochs=epochs, callbacks=[early_stop])
+        model.fit(x_train, y, validation_split=validation_split, epochs=epochs, callbacks=[early_stop, tensorboard], verbose=verbose)
         
         return model
 

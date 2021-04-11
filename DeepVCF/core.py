@@ -3,7 +3,7 @@ Where all the other files converge.
 This file should not be long and should be incredabliy human readable.
 People should look at this and think; wow that's simpiler than I thought. We need this in research.
 """
-VERSION = '0.0.2'
+VERSION = '0.1.0'
 
 from typing import Callable, Union
 
@@ -16,7 +16,7 @@ from .tools import pathing
 from .preprocess import Preprocess
 from .model import models
 from .create_vcf import VCF
-
+from .postprocess import Metrics
 
 
 class DeepVCF:
@@ -65,8 +65,9 @@ class DeepVCF:
         self._model(input_shape=x_train.shape[1:])
         self.model = models.train_model(self.model, x_train, y_train, **kwargs)
 
-    def validation_plots(self, **kwargs) -> None:
-        pass
+    def validation(self, real_vcf, predicted_vcf, **kwargs) -> None:
+        self.metrics = Metrics(real_vcf, predicted_vcf, **kwargs).metrics
+        return self.metrics
 
     def create_vcf(self, reference_file, alignment_file, output_folder, output_prefix, window_size:int=15, **kwargs) -> None:
         self._preprocessing(reference_file, alignment_file, **kwargs)

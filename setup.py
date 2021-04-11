@@ -46,7 +46,8 @@ setup(
         'pandas',
         'pysam',
         'scipy',
-        'cython' ,
+        'cython',
+        'seaborn',
     ],
     entry_points={
         'console_scripts': [
