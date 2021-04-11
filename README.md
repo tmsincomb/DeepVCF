@@ -13,11 +13,26 @@ pip install -e ./DeepVCF
 conda install -y dwgsim samtools bcftools bwa
 ```
 
-# Usage
+# Usage: Init
 ```Python
+from DeepVCF.core import DeepVCF
+
+deepvcf = DeepVCF()
 ```
 
-# Tutorial
-[Recreating Example Datasets](./jupyter_nb/creating-data-for-usage-demo.ipynb)
-[Usage Demo with In Silico datasets](./jupyter_nb/tutorial.ipynb)
-[Model Validation with human datasets from GIAB](./jupyter_nb/GIAB-usage-demo.ipynb)
+# Simple Usage: Variant Calling 
+```python
+deepvcf.train(reference_file, alignment_file, vcf_file)  # vcf treated as truth 
+vcf_df = deepvcf.create_vcf(
+    reference_file=query_ref_file,   
+    alignment_file=query_align_file,
+    output_folder='./',  
+    output_prefix='my-variants'  # auto adds .deepvcf.vcf to end of file created
+)
+vcf_df.head() # shows pandas DataFrame for variant outputs
+```
+
+# Tutorials
+[Recreating Example Datasets](./jupyter_nb/creating-data-for-usage-demo.ipynb)</br>
+[Usage Demo with In Silico datasets](./jupyter_nb/tutorial.ipynb)</br>
+[Model Validation with human datasets from GIAB](./jupyter_nb/GIAB-usage-demo.ipynb)</br>
