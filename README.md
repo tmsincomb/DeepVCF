@@ -12,7 +12,7 @@ pip install -e ./DeepVCF
 ```
 
 # Optional Install
-### Creating *in silico* datasets
+### For creating *in silico* datasets
 ```bash
 conda install -y dwgsim samtools bcftools bwa
 ```
