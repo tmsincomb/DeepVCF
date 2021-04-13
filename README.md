@@ -1,5 +1,5 @@
-# Variant Caller
-A deep learning variant caller aimed for Prokaryotic genomes
+# What is DeepVCF?
+A deep learning SNP variant caller aimed for Prokaryotic genomes!
 
 # Prerequisites
 ### WARNING :: Tensorflow stable does not work with python 3.9 yet!
