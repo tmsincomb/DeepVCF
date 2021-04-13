@@ -1,6 +1,10 @@
 # Variant Caller
 A deep learning variant caller aimed for Prokaryotic genomes
 
+# Prerequisites
+### WARNING :: Tensorflow stable does not work with python 3.9 yet!
+[![Python 3.8](https://img.shields.io/badge/python-3.8-blue.svg)](https://www.python.org/downloads/release/python-380/)
+
 # Install
 ```bash
 git clone git@github.com:tmsincomb/DeepVCF.git
